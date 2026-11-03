@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "kali": {
+      "url": "https://kali.khosa.co:9443/mcp"
+    }
+  }
+}

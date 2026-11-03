@@ -1,0 +1,8 @@
+[Unit]
+Description=Aggregate resource budget for Kali MCP Docker workers
+
+[Slice]
+MemoryMax=2G
+MemorySwapMax=512M
+CPUQuota=200%
+TasksMax=1024

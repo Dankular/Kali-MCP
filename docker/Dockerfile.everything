@@ -1,0 +1,13 @@
+FROM kali-mcp:1
+ENV DEBIAN_FRONTEND=noninteractive
+# Keep package post-install hooks from trying to start daemons in the build.
+RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
+ && chmod 755 /usr/sbin/policy-rc.d \
+ && apt-get update \
+ && apt-get install -y kali-linux-everything \
+ && for binary in /usr/bin/nmap /usr/lib/nmap/nmap; do if [ -f "$binary" ]; then setcap -r "$binary" 2>/dev/null || true; fi; done \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+COPY build-catalog.py /opt/build-catalog.py
+RUN python3 /opt/build-catalog.py --strip-capabilities > /opt/kali-catalog.json
+WORKDIR /tmp

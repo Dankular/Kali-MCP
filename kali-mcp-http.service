@@ -1,0 +1,19 @@
+[Unit]
+Description=Kali MCP public HTTPS endpoint
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kali-mcp
+EnvironmentFile=/opt/kali-mcp/http.env
+ExecStart=/opt/kali-mcp/.venv/bin/python /opt/kali-mcp/mcp-kali/http_server.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=660
+KillMode=mixed
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

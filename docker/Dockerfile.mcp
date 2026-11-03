@@ -1,0 +1,7 @@
+FROM kalilinux/kali-rolling:latest
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nmap hydra sqlmap nikto gobuster netcat-openbsd python3 ca-certificates libcap2-bin \
+ && for binary in /usr/bin/nmap /usr/lib/nmap/nmap; do if [ -f "$binary" ]; then setcap -r "$binary" 2>/dev/null || true; fi; done \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /tmp

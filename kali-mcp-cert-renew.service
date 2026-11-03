@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew Kali MCP HTTPS certificate
+
+[Service]
+Type=oneshot
+TimeoutStartSec=900
+ExecStart=/opt/kali-mcp/.certbot/bin/certbot renew --quiet --deploy-hook "systemctl restart kali-mcp-http.service"

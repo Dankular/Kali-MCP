@@ -1,0 +1,50 @@
+# Python environments and generated files
+.venv/
+venv/
+.certbot/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime jobs, artifacts, catalogs and logs
+state/
+artifacts/
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+kali-catalog*.json
+kali-catalog*.json.tmp
+*.log
+*.tmp
+*.tar.gz
+*.zip
+
+# Local configuration, credentials and certificates
+.env
+.env.*
+!.env.example
+http.env
+http-credentials.json
+*.http-credentials.json
+http-users.json
+*.ppk
+*.pem
+*.key
+*.p12
+*.pfx
+.ssh/
+.aws/
+.codex/
+.agents/
+
+# Editors and operating-system metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
