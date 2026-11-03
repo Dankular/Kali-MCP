@@ -1,0 +1,21 @@
+[Unit]
+Description=Kali MCP TLS hostname router on standard HTTPS
+After=network-online.target docker.service kali-mcp-http.service
+Wants=network-online.target kali-mcp-http.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=notify
+EnvironmentFile=/opt/kali-mcp/edge.env
+ExecStartPre=/usr/sbin/haproxy -c -f /etc/haproxy/kali-mcp.cfg
+ExecStart=/usr/sbin/haproxy -Ws -f /etc/haproxy/kali-mcp.cfg -p /run/kali-mcp-edge.pid
+ExecStartPost=/opt/kali-mcp/.venv/bin/python /opt/kali-mcp/edge-firewall.py install
+ExecStopPost=/opt/kali-mcp/.venv/bin/python /opt/kali-mcp/edge-firewall.py remove
+Restart=on-failure
+RestartSec=2
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

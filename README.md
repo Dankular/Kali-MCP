@@ -1,7 +1,7 @@
 # Kali MCP
 
 Remote Kali Linux tools for MCP-compatible agents, served over HTTPS.
-Use the public server at **https://kali.khosa.co:9443/mcp**, or
+Use the public server at **https://kali.khosa.co/mcp**, or
 [self-host your own instance](#self-host-your-own-server) using this repository.
 The public server is available for users and agents without an account or API key.
 
@@ -12,9 +12,9 @@ hardcoded package list.
 
 ## Use the public MCP server
 
-Public Streamable HTTP endpoint: **https://kali.khosa.co:9443/mcp**.
+Public Streamable HTTP endpoint: **https://kali.khosa.co/mcp**.
 No authentication, token, SSH connection, or local Kali installation is required.
-Use the complete URL, including port `9443` and path `/mcp`.
+Use the complete URL, including path `/mcp`. Standard HTTPS port 443 is used; do not add `:9443` when configuring Claude.
 This is an MCP API endpoint; opening it in a browser does not display a website.
 
 For clients using an `mcpServers` configuration:
@@ -23,7 +23,7 @@ For clients using an `mcpServers` configuration:
 {
   "mcpServers": {
     "kali": {
-      "url": "https://kali.khosa.co:9443/mcp"
+      "url": "https://kali.khosa.co/mcp"
     }
   }
 }
@@ -40,7 +40,7 @@ configuration. Codex discovers tools through MCP's `tools/list`; only the server
 URL belongs in client configuration. Package and command discovery is provided
 by the MCP server through `kali_search`, `kali_command_info`, and `kali_run`.
 The HTTPS service starts
-automatically at boot, with automatic certificate renewal on HTTPS port 9443.
+automatically at boot, with automatic certificate renewal on HTTPS port 443.
 
 ## Instructions for connecting agents
 
@@ -177,7 +177,7 @@ host platform. The wrapper runs on the host and creates disposable Kali worker
 containers; it is not a single Docker Compose service.
 
 You also need `git`, `python3-venv`, `iptables`, `ebtables`, `iproute2`, `kmod`,
-and `util-linux`. Point a DNS hostname at the host. Permit inbound TCP 9443 for
+and `util-linux`. Point a DNS hostname at the host. Permit inbound TCP 443 for
 MCP and TCP 80 for certificate issuance and renewal. Port 80 must be free when
 Certbot's standalone challenge runs. Leave sufficient RAM for the host in
 addition to the default 2 GiB worker budget.
@@ -201,7 +201,7 @@ sh deploy.sh
 sh deploy-http.sh mcp.example.com
 ```
 
-Your MCP URL is then **`https://mcp.example.com:9443/mcp`**. In the client
+Your MCP URL is then **`https://mcp.example.com/mcp`**. In the client
 configuration above, replace the public URL with your own endpoint. This setup
 also runs without authentication. `deploy-http.sh` configures TLS, the domain
 checks, artifact download URLs, automatic startup, and certificate renewal.
@@ -223,6 +223,33 @@ Check the deployment with `systemctl status kali-mcp-http`, `GET /healthz`, and
 the `kali_health` MCP tool. Run `kali_self_test` to validate supported commands
 against disposable offline fixtures. Keep `/opt/kali-mcp/state` across upgrades
 to retain background jobs, reports, and health records until their expiry.
+
+## Sharing a host where HTTPS port 443 is occupied
+
+For a new dedicated host, `deploy-http.sh` binds standard HTTPS port 443 directly.
+If another TLS service already owns that listener, keep Kali on its internal TLS
+port and optionally install the included hostname router instead:
+
+```sh
+cd /opt/kali-mcp
+# Install HAProxy first; retain any existing proxy/service configuration.
+sh deploy-http.sh mcp.example.com 9443
+sh deploy-edge.sh mcp.example.com YOUR_PUBLIC_IPV4
+```
+
+The router sends SNI `mcp.example.com` to Kali on `127.0.0.1:9443`; other hostnames
+continue to the existing listener at `127.0.0.1:443`. It passes TLS through without
+replacing certificates or changing Docker port mappings. It requires IPv4 and
+TLS clients that send SNI. The public MCP URL remains `https://mcp.example.com/mcp`.
+Port 9443 remains available for compatible clients, but use standard HTTPS for
+Claude connectors. Choose **No sign in** when adding this public server to Claude.
+
+`deploy-edge.sh` configures the allowed hosts/origins and canonical artifact URL,
+then enables `kali-mcp-edge.service`. For a staged rollout, pass `--prepare`, test
+the router configuration and listener, restart `kali-mcp-http`, and enable the
+edge service only after validation. To remove the optional router and restore
+the original port-443 path, run `systemctl disable --now kali-mcp-edge.service`;
+its stop hook removes its own routing rules.
 
 ## Deploy source updates from Windows
 
@@ -271,7 +298,7 @@ directory across source deployments. Optional environment settings include:
 | `MCP_KALI_MAX_RETAINED_JOBS` | `1000` |
 | `MCP_KALI_ARTIFACT_MAX_BYTES` | `8388608` |
 | `MCP_KALI_ARTIFACT_BUDGET_BYTES` | `1073741824` |
-| `MCP_KALI_PUBLIC_URL` | `https://kali.khosa.co:9443` |
+| `MCP_KALI_PUBLIC_URL` | `https://kali.khosa.co` |
 
 Keep the admission budget at or below the aggregate systemd worker budget.
 `GET /healthz` is a lightweight HTTP readiness view; detailed checks are in

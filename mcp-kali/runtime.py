@@ -308,7 +308,7 @@ def artifact_info(token):
         row = conn.execute("SELECT * FROM artifacts WHERE id=? AND expires>?", (token, time.time())).fetchone()
     if row is None or not (root() / "artifacts" / token).is_file():
         raise ValueError("Unknown or expired identifier")
-    base = os.environ.get("MCP_KALI_PUBLIC_URL", "https://kali.khosa.co:9443").rstrip("/")
+    base = os.environ.get("MCP_KALI_PUBLIC_URL", "https://kali.khosa.co").rstrip("/")
     return {**dict(row), "uri": f"kali://artifacts/{token}", "url": f"{base}/artifacts/{token}"}
 
 

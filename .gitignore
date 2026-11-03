@@ -29,6 +29,7 @@ kali-catalog*.json.tmp
 .env.*
 !.env.example
 http.env
+edge.env
 http-credentials.json
 *.http-credentials.json
 http-users.json
