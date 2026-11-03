@@ -14,7 +14,10 @@ import provider
 import catalog
 import runtime
 import checks
-from results import ExecutionEvidence, JobStatus
+import nuclei
+import metasploit
+from results import ExecutionEvidence, JobStatus, MetasploitWorkspace, MetasploitResponse
+from typing import Any
 
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -126,6 +129,73 @@ def gobuster_dir(target: str, port: int = 80, wordlist_inline: str = "admin\nbac
             "-w", "/tmp/words", "-q", "-t", "4", "--no-progress"]
     return provider.run_sandboxed(argv, target, [port], allow_private=allow_private,
                                   timeout_s=timeout_s, stdin_text=words).evidence()
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True,idempotentHint=True,openWorldHint=False))
+@threaded
+def nuclei_templates(query: str = "", severity: list[str] | None = None, tags: list[str] | None = None,
+                     offset: int = 0, limit: int = 25) -> dict:
+    """Discover pinned HTTP Nuclei template IDs, names, severities and tags on the server."""
+    return nuclei.search(query,severity,tags,offset,limit)
+
+
+@mcp.tool()
+@threaded
+def nuclei_scan(url: str, template_ids: list[str] | None = None, template_yaml: str | None = None,
+                rate_limit: int = 10, concurrency: int = 2, timeout_s: int = 180,
+                headers: dict[str,str] | None = None) -> JobStatus:
+    """Queue an HTTP Nuclei scan with up to 32 selected template IDs or an inline HTTP template.
+
+    Poll kali_job_result for exit code, parsed findings.nuclei and the JSONL report.
+    Target DNS is pinned; redirects, OAST and runtime updates are disabled. HTTP
+    templates only; no code/headless/network templates. Rate limit is 1–50 req/s.
+    """
+    return nuclei.submit(url=url,template_ids=template_ids,template_yaml=template_yaml,
+                         rate_limit=rate_limit,concurrency=concurrency,timeout_s=timeout_s,headers=headers)
+
+
+@mcp.tool()
+@threaded
+def metasploit_open(target: str | None = None, ports: str = "80,443", udp_ports: str = "",
+                    memory_mb: int = 1536, lease_s: int = 600) -> MetasploitWorkspace:
+    """Queue an isolated Metasploit RPC workspace and return its secret workspace ID.
+
+    Poll metasploit_status until ready. Network is off unless one public target
+    and its TCP/UDP ports are declared. The 60–600 second lease includes startup;
+    reserved memory counts against the global budget until closed or expired.
+    RPC runs inside the worker, with no published RPC port and no msfconsole argv.
+    """
+    return metasploit.open_workspace(target,ports,udp_ports,memory_mb,lease_s)
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True,idempotentHint=True,openWorldHint=False))
+@threaded
+def metasploit_status(workspace_id: str) -> MetasploitWorkspace:
+    """Get RPC readiness, version, job state and lease expiry for your workspace."""
+    return metasploit.status(workspace_id)
+
+
+@mcp.tool()
+@threaded
+def metasploit_rpc(workspace_id: str, method: str, params: list[Any] | None = None,
+                   offset: int = 0, limit: int = 100, timeout_s: int = 30) -> MetasploitResponse:
+    """Call Metasploit's MessagePack RPC API in an existing workspace; no console argv parsing.
+
+    Examples: core.version []; module.info ['auxiliary','scanner/http/http_version'];
+    module.options ['auxiliary','scanner/http/http_version']; module.execute
+    ['auxiliary','scanner/http/http_version',{'RHOSTS':'TARGET','RPORT':443,'SSL':true}];
+    job.list []; session.list []. Module jobs/sessions belong only to this workspace.
+    params excludes the internal RPC token. Large results are paginated or retained
+    as artifacts. Database methods need a configured DB; no DB/listeners are exposed.
+    """
+    return metasploit.rpc(workspace_id,method,params,offset,limit,timeout_s)
+
+
+@mcp.tool()
+@threaded
+def metasploit_close(workspace_id: str) -> MetasploitWorkspace:
+    """Request workspace shutdown, cancelling its job and removing its container and network rules."""
+    return metasploit.close_workspace(workspace_id)
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False))
@@ -249,8 +319,8 @@ def kali_health() -> dict:
 def kali_self_test(commands: list[str] | None = None) -> JobStatus:
     """Queue known startup/functional checks on offline fixtures; poll the returned job ID.
 
-    Defaults test nmap, hydra, sqlmap, nikto, gobuster, john, ffuf, hashcat,
-    whatweb, tshark, dumpcap, searchsploit, java. msfconsole is opt-in (slow startup).
+    Defaults test nmap, hydra, sqlmap, nikto, gobuster, john, nuclei, ffuf, hashcat,
+    whatweb, tshark, dumpcap, searchsploit, java. msfrpcd is opt-in (RPC startup).
     Successful functional checks verify fixture-specific evidence, not just exit codes.
     """
     return runtime.submit("selftest", {"commands": checks.validate_commands(commands)})

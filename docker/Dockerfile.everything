@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
  && chmod 755 /usr/sbin/policy-rc.d \
  && apt-get update \
- && apt-get install -y kali-linux-everything \
+ && apt-get install -y kali-linux-everything nuclei metasploit-framework python3-msgpack \
  && for binary in /usr/bin/nmap /usr/lib/nmap/nmap; do if [ -f "$binary" ]; then setcap -r "$binary" 2>/dev/null || true; fi; done \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*

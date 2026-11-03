@@ -72,6 +72,8 @@ def db():
       CREATE TABLE IF NOT EXISTS validations (
         command TEXT, image TEXT, level TEXT, checked REAL, passed INTEGER, detail TEXT,
         PRIMARY KEY(command,image));
+      CREATE TABLE IF NOT EXISTS services (
+        job_id TEXT PRIMARY KEY, container TEXT, created REAL, lease_expires REAL);
     """)
     return conn
 
@@ -347,6 +349,7 @@ def purge():
             (root() / "artifacts" / row[0]).unlink(missing_ok=True)
             conn.execute("DELETE FROM artifacts WHERE id=?", (row[0],))
         conn.execute("DELETE FROM jobs WHERE expires<? AND state IN ('completed','failed','cancelled')", (time.time(),))
+        conn.execute("DELETE FROM services WHERE job_id NOT IN (SELECT id FROM jobs)")
         folder = root() / "artifacts"
         if folder.exists():
             known = {row[0] for row in conn.execute("SELECT id FROM artifacts")}

@@ -13,6 +13,9 @@ htmlcov/
 # Runtime jobs, artifacts, catalogs and logs
 state/
 artifacts/
+nuclei-templates/
+nuclei-template-releases/
+nuclei-templates.next
 *.sqlite3
 *.sqlite3-*
 *.db

@@ -83,6 +83,12 @@ Available MCP tools:
 | `sqlmap_scan` | Check an HTTP URL for SQL injection. |
 | `nikto_scan` | Check an HTTP service with Nikto. |
 | `gobuster_dir` | Find HTTP paths using a supplied word list. |
+| `nuclei_templates` | Discover pinned HTTP template IDs, names, severities and tags. |
+| `nuclei_scan` | Queue a Nuclei HTTP scan with structured findings and a JSONL report. |
+| `metasploit_open` | Queue an isolated, leased Metasploit RPC workspace. |
+| `metasploit_status` | Check RPC readiness, version and workspace lifetime. |
+| `metasploit_rpc` | Call module, job, session and other Metasploit RPC methods. |
+| `metasploit_close` | Stop a workspace and reclaim its container and resources. |
 
 Network access is disabled by default for `kali_run`. For an authorized network
 task, declare one public `target` and the required TCP `ports` and/or `udp_ports`.
@@ -101,10 +107,104 @@ reports unknown requirements. No package definitions belong in client configurat
 `kali_health` distinguishes installation from recorded startup and functional
 checks. Records are tied to the actual Docker image ID and include timestamps;
 rebuilding the image does not inherit an older image's readiness claims.
-`kali_self_test` runs six functional fixtures (Nmap, Hydra, SQLMap, Nikto,
-Gobuster, John) and seven startup checks by default. Metasploit startup is opt-in
-with `{"commands":["msfconsole"]}`. Tests use disposable, network-disabled
+`kali_self_test` runs seven functional fixtures (Nmap, Hydra, SQLMap, Nikto,
+Gobuster, John, Nuclei) and seven startup checks by default. Metasploit RPC is opt-in
+with `{"commands":["msfrpcd"]}`; it validates RPC login and `core.version` without
+launching `msfconsole`. Tests use disposable, network-disabled
 workers. A successful check covers its particular fixture, not every command mode.
+
+## Nuclei HTTP scanning
+
+The full Kali image includes Nuclei. Use `nuclei_templates` to discover the
+server's pinned HTTP templates, then pass selected IDs to `nuclei_scan`. Discovery
+supports query, severity, tag filters, and pagination. A scan accepts up to 32
+templates, with at most 256 KiB of combined source. Alternatively supply one
+custom HTTP template in `template_yaml` (maximum 64 KiB).
+
+Example MCP tool parameters:
+
+```jsonl
+{"name":"nuclei_templates","arguments":{"query":"tech","limit":10}}
+{"name":"nuclei_scan","arguments":{"url":"https://YOUR_AUTHORIZED_TARGET/","template_ids":["SELECTED_TEMPLATE_ID"],"rate_limit":10,"timeout_s":180}}
+{"name":"kali_job_result","arguments":{"job_id":"RETURNED_JOB_ID"}}
+```
+
+Scanning is asynchronous. Completed job evidence contains `findings.nuclei`
+with template ID, name, severity, matched URL and extracted values, plus a retained
+JSONL report. The parsed summary is bounded; the report contains the captured
+full scan output within the artifact size limit. Inspect exit code and timeout
+flags even when no findings are returned.
+
+The runner pins the target IP and preserves HTTP Host/TLS SNI. It disables
+redirects, OAST/Interactsh, and automatic updates. This typed interface accepts
+HTTP templates; code, JavaScript, headless, DNS and other protocols are excluded.
+The default rate is 10 requests/second, configurable from 1–50, with concurrency
+1–5. This is a template-based detector, not a guarantee that a target is secure.
+
+Self-hosted full-image deployments install an explicit template revision:
+
+```sh
+cd /opt/kali-mcp
+.venv/bin/python -m pip install -r mcp-kali/requirements.txt
+.venv/bin/python install-nuclei-templates.py --ref v10.5.1
+systemctl restart kali-mcp-http
+```
+
+Templates are downloaded from the official `projectdiscovery/nuclei-templates`
+repository, indexed with content hashes, and switched through a managed symlink.
+They stay outside Git in `nuclei-template-releases/` and `nuclei-templates/`.
+Queued jobs retain their selected source and revision even if the active catalog
+is updated. Inline templates work without a downloaded catalog. The typed runner
+stages selected YAML files; templates requiring separate helper/payload files
+need those payloads inlined. Non-HTTP protocols require a different execution path.
+
+## Metasploit through RPC
+
+Use the RPC tools for Metasploit instead of passing console commands to
+`msfconsole`. Each workspace runs its own `msfrpcd` inside an isolated Kali
+container. The daemon listens only on container loopback; there is no published
+RPC socket, and RPC credentials stay inside the workspace. Agents continue to
+use the same public HTTP MCP endpoint with no sign-in.
+
+1. Call `metasploit_open`. Omit `target` for offline module discovery, or declare
+   one public target and its TCP/UDP ports for network operations.
+2. Keep `workspace_id` and poll `metasploit_status` until `ready` is true. Startup
+   is asynchronous and can take several minutes; `startup_detail` reports the
+   current handshake state.
+3. Call `metasploit_rpc` with the method and positional `params`. Do not supply
+   an RPC token: the bridge handles the internal login.
+4. Close the workspace with `metasploit_close`, then poll until its job reaches
+   a terminal state so its memory and execution slot are released.
+
+For example, after opening a workspace:
+
+```jsonl
+{"name":"metasploit_rpc","arguments":{"workspace_id":"WORKSPACE_ID","method":"core.version"}}
+{"name":"metasploit_rpc","arguments":{"workspace_id":"WORKSPACE_ID","method":"module.search","params":["type:auxiliary http_version"]}}
+{"name":"metasploit_rpc","arguments":{"workspace_id":"WORKSPACE_ID","method":"module.info","params":["auxiliary","scanner/http/http_version"]}}
+{"name":"metasploit_rpc","arguments":{"workspace_id":"WORKSPACE_ID","method":"module.options","params":["auxiliary","scanner/http/http_version"]}}
+{"name":"metasploit_rpc","arguments":{"workspace_id":"WORKSPACE_ID","method":"job.list"}}
+{"name":"metasploit_rpc","arguments":{"workspace_id":"WORKSPACE_ID","method":"session.list"}}
+```
+
+`module.execute` takes `[module_type, module_name, options]`. Its Metasploit
+`job_id`/`uuid` is separate from the workspace's MCP job ID. Poll the module with
+`module.results` and acknowledge results with `module.ack` where supported by
+the module. RPC methods in `core`, `module`, `job`, `session`, `console`, `plugin`
+and `db` are available; database operations require a configured database.
+Inspect the response's `error` field as well as its `result`.
+
+RPC list responses support `offset`/`limit` (maximum 100). Large responses are
+retained as downloadable JSON artifacts, with a bounded inline preview. Binary
+values that cannot be decoded as UTF-8 use an `{encoding:"base64",data:...}` object.
+
+Workspaces reserve 1,536 MiB by default and have a 60–600 second lease (default
+600), including startup. Their modules, jobs, consoles and sessions persist
+across MCP calls and client disconnects until closed or expired. Container or
+service failure ends that workspace; it is not silently resumed or replayed.
+Network rules stay fixed to the declared target and ports for the entire lease.
+There are no published callback/listener ports, host mounts, Docker socket, or
+persistent database in the worker. Close idle workspaces to release capacity.
 
 ## Background jobs and execution queue
 
@@ -365,7 +465,7 @@ Call `kali_health` through MCP to inspect readiness, image identity, queue load,
 and recorded checks. Call `kali_self_test` to queue the functional and startup
 checks described above, then poll its job ID with `kali_job_result`.
 
-A client connection check should initialize the session, list all 14 tools, and
+A client connection check should initialize the session, list all 20 tools, and
 execute `kali_run` with `{"command":"nmap","args":["--version"]}`.
 Check the returned `exit_code` rather than assuming every MCP response means success.
 

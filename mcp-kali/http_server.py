@@ -9,6 +9,8 @@ import anyio
 import runtime
 import provider
 import checks
+import nuclei
+import metasploit
 
 from starlette.responses import JSONResponse, Response
 import uvicorn
@@ -91,7 +93,8 @@ def create_app():
     @asynccontextmanager
     async def lifespan(application):
         stop, threads = await anyio.to_thread.run_sync(
-            runtime.start_workers, {"run": kali_run.__wrapped__, "selftest": checks.run_suite}, provider.reap_orphans)
+            runtime.start_workers, {"run": kali_run.__wrapped__, "selftest": checks.run_suite,
+                                   "nuclei": nuclei.run_scan, "metasploit": metasploit.run_workspace}, provider.reap_orphans)
         try:
             async with original_lifespan(application):
                 yield

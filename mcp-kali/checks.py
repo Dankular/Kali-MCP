@@ -24,10 +24,10 @@ STARTUP = {
     "ffuf": (["-V"], [0]), "hashcat": (["--version"], [0]),
     "whatweb": (["--version"], [0]), "tshark": (["--version"], [0]),
     "dumpcap": (["--version"], [0]), "searchsploit": (["--json", "kali-mcp-validation-nonexistent"], [0]),
-    "java": (["-version"], [0]), "msfconsole": (["-q", "-x", "version; exit -y"], [0]),
+    "java": (["-version"], [0]),
 }
-FUNCTIONAL = ("nmap", "hydra", "sqlmap", "nikto", "gobuster", "john")
-DEFAULT_CHECKS = list(FUNCTIONAL) + [name for name in STARTUP if name != "msfconsole"]
+FUNCTIONAL = ("nmap", "hydra", "sqlmap", "nikto", "gobuster", "john", "nuclei")
+DEFAULT_CHECKS = list(FUNCTIONAL) + list(STARTUP)
 
 # This HTTP fixture lives inside the same network-disabled worker as the tool.
 # It has no host mounts, external traffic, exposed ports or persistent services.
@@ -62,12 +62,14 @@ httpd = http.server.ThreadingHTTPServer(("127.0.0.1",18080),Handler)
 threading.Thread(target=httpd.serve_forever,daemon=True).start()
 open("/tmp/words","w").write("wrong\nfixture-pass\n")
 open("/tmp/paths","w").write("admin\nmissing\n")
+open("/tmp/nuclei-proof.yaml","w").write("id: kali-mcp-self-test\ninfo:\n  name: Kali MCP fixture\n  author: kali-mcp\n  severity: info\nhttp:\n  - method: GET\n    path:\n      - '{{BaseURL}}/admin'\n    matchers:\n      - type: word\n        words:\n          - kali-mcp-fixture\n")
 cases = {
  "nmap": (["nmap","-sT","-n","-Pn","-p","18080","127.0.0.1"], "18080/tcp open"),
  "hydra": (["hydra","-I","-l","fixture","-P","/tmp/words","-s","18080","-t","1","-f","127.0.0.1","http-get","/private"], "password: fixture-pass"),
  "sqlmap": (["sqlmap","-u","http://127.0.0.1:18080/user?id=1","--batch","--dbms=SQLite","--technique=BEU","--banner","--timeout=5","--retries=0","--output-dir=/tmp/sqlmap"], "injectable"),
  "nikto": (["nikto","-h","http://127.0.0.1:18080","-nocheck","-nointeractive","-ask","no","-maxtime","12"], "KaliMCPFixture"),
  "gobuster": (["gobuster","dir","-u","http://127.0.0.1:18080","-w","/tmp/paths","-t","1","--no-progress","-q"], "admin"),
+ "nuclei": (["nuclei","-u","http://127.0.0.1:18080","-t","/tmp/nuclei-proof.yaml","-duc","-ni","-dr","-jsonl","-silent","-nc"], "kali-mcp-self-test"),
 }
 if command == "john":
     open("/tmp/hashes","w").write(hashlib.sha256(b"fixture-pass").hexdigest()+"\n")
@@ -88,8 +90,8 @@ print("FUNCTIONAL_OK:" + command)
 
 def validate_commands(commands):
     commands = commands if commands is not None else DEFAULT_CHECKS
-    if not commands or len(commands) > 16 or any(name not in (*FUNCTIONAL, *STARTUP) for name in commands):
-        raise ValueError("Choose supported self-test commands: " + ", ".join([*FUNCTIONAL, *STARTUP]))
+    if not commands or len(commands) > 16 or any(name not in (*FUNCTIONAL, *STARTUP, "msfrpcd") for name in commands):
+        raise ValueError("Choose supported self-test commands: " + ", ".join([*FUNCTIONAL, *STARTUP, "msfrpcd"]))
     return list(dict.fromkeys(commands))
 
 
@@ -99,10 +101,14 @@ def run_suite(commands=None):
     for index, command in enumerate(commands):
         runtime.check_cancelled()
         runtime.progress(f"Checking {command} ({index+1}/{len(commands)})")
-        level = "functional" if command in FUNCTIONAL else "startup"
+        level = "functional" if command in (*FUNCTIONAL,"msfrpcd") else "startup"
         try:
             catalog.executable(command)
-            if command in FUNCTIONAL:
+            if command=="msfrpcd":
+                import metasploit
+                result=metasploit.probe()
+                passed=result.exit_code==0 and '"rpc": "ready"' in result.stdout
+            elif command in FUNCTIONAL:
                 script = FIXTURE.replace("COMMAND", repr(command), 1)
                 result = provider.run_sandboxed(["python3", "-"], "offline", [], network_mode="none",
                                                stdin_text=script, timeout_s=110)
@@ -110,8 +116,7 @@ def run_suite(commands=None):
             else:
                 args, codes = STARTUP[command]
                 result = provider.run_sandboxed([catalog.executable(command), *args], "offline", [], network_mode="none",
-                                               timeout_s=360 if command == "msfconsole" else 30,
-                                               memory_mb=2048 if command == "msfconsole" else 512)
+                                               timeout_s=30,memory_mb=512)
                 passed = result.exit_code in codes and bool(result.stdout or result.stderr)
             runtime.check_cancelled()
             detail = f"exit_code={result.exit_code}; duration_ms={result.duration_ms}"

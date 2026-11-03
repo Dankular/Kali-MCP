@@ -182,7 +182,8 @@ with os.fdopen(fd,'rb') as stream:
 @scheduled
 def run_sandboxed(argv, target_host, target_ports, *, allow_private=False,
                   extra_caps=None, timeout_s=DEFAULT_TIMEOUT_S, network_mode="allowlist",
-                  stdin_text=None, memory_mb=512, target_udp_ports=None, artifact_paths=None):
+                  stdin_text=None, memory_mb=512, target_udp_ports=None, artifact_paths=None,
+                  on_ready=None):
     artifact_paths = artifact_paths or []
     validate_artifact_paths(artifact_paths)
     if network_mode not in ("allowlist", "none"):
@@ -245,6 +246,8 @@ def run_sandboxed(argv, target_host, target_ports, *, allow_private=False,
                 # per-container forwarding rules. Localhost is this worker's
                 # namespace; explicit DNS requests can still use declared UDP ports.
                 base.extend(["--network", SCAN_NETWORK, "--ip", container_ip, "--dns", "127.0.0.1"])
+                if target_host != target_ip:
+                    base.extend(["--add-host", f"{target_host}:{target_ip}"])
             else:
                 base.extend(["--network", "none"])
             # Only this fixed bootstrap runs before physical-interface policy is
@@ -279,6 +282,8 @@ def run_sandboxed(argv, target_host, target_ports, *, allow_private=False,
                 _iptables("-I", parent, "1", "-m", "physdev", "--physdev-in", veth, "-j", chain)
                 hooked = True
                 _run(["docker", "exec", name, "touch", "/tmp/.kali-ready"])
+        if on_ready is not None:
+            on_ready(name)
         timed_out = was_cancelled = False
         runtime.check_cancelled()
         try:

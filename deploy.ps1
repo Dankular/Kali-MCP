@@ -10,7 +10,7 @@ $pscp = 'C:\Program Files (x86)\PuTTY\pscp.exe'
 $archive = Join-Path $PSScriptRoot 'kali-mcp-deploy.tar.gz'
 Push-Location $PSScriptRoot
 try {
-    & tar --exclude=__pycache__ -czf $archive mcp-kali docker deploy.sh deploy-http.sh deploy-edge.sh edge-firewall.py kali-mcp-edge.service build-everything.sh activate-everything.sh prune-kali-cache.py README.md mcp-http-config.example.json kali-mcp-workers.slice kali-mcp-http.service kali-mcp-cert-renew.service kali-mcp-cert-renew.timer
+    & tar --exclude=__pycache__ -czf $archive mcp-kali docker deploy.sh deploy-http.sh deploy-edge.sh edge-firewall.py kali-mcp-edge.service build-everything.sh activate-everything.sh prune-kali-cache.py install-nuclei-templates.py README.md mcp-http-config.example.json kali-mcp-workers.slice kali-mcp-http.service kali-mcp-cert-renew.service kali-mcp-cert-renew.timer
     if ($LASTEXITCODE) { throw 'Archive failed' }
     & $pscp -batch -i $Key -hostkey $HostKey $archive "${Server}:/tmp/kali-mcp-deploy.tar.gz"
     if ($LASTEXITCODE) { throw 'Upload failed' }
